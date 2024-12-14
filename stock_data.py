@@ -4,6 +4,31 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sqlalchemy import create_engine
 
+st.set_page_config(
+    layout="wide",
+    page_icon="💹",
+    page_title="Stock Data Analysis",
+    initial_sidebar_state="expanded"
+)
+
+# Page styling
+st.markdown(
+    """
+    <style>
+    .stApp {        
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    [data-testid="stSidebar"] {
+        background-color: rgba(100, 60, 50, 0.4);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # Database connection using SQLAlchemy
 engine = create_engine('mysql+pymysql://root:Abcd1234@localhost/stock_analysis')
 
@@ -145,7 +170,7 @@ try:
     plt.legend()
     plt.grid(visible=True, linestyle="--", alpha=0.7)
     st.pyplot(plt)
-    
+
 except Exception as e:
     st.error(f"An error occurred: {e}")
 
