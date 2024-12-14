@@ -40,7 +40,7 @@ def fetch_data():
     return df
 
 # Title and Description
-st.title("Interactive Stock Data Analysis")
+st.title("Stock Data Analysis")
 
 # Load Data
 try:
@@ -51,13 +51,8 @@ try:
 
     # Sidebar Inputs
     st.sidebar.header("User Inputs")
-    
-    # Ensure that 'df' is available when these inputs are created
-    selected_metric = st.sidebar.multiselect(
-        "Select Metric to Visualize", 
-        ["Open", "High", "Low", "Close", "Volume","monthly_return","cumulative_return","daily_return","volatility","yearly_return"] 
-  )
-    
+      
+        
     selected_ticker = st.sidebar.multiselect(
         "Select Ticker", 
         ["All"] + df["Ticker"].dropna().unique().tolist()
@@ -96,6 +91,67 @@ try:
         st.pyplot(fig)
     else:
         st.error("Volatility data is missing!")
+
+    # average yearly return by sector
+    
+    st.subheader("Average Yearly Return by Sector")
+
+# Calculate yearly returns
+    yearly_returns = (
+    df.groupby(['Ticker', 'sector', 'year'])['close']
+    .last()
+    .pct_change()  # Calculate percentage change between consecutive years
+    .dropna()  # Remove any NaN values resulting from pct_change()
+    .reset_index(name='yearly_return')  # Reset index to get a clean dataframe
+)
+
+# Calculate average yearly return for each sector
+    sector_avg_returns = yearly_returns.groupby('sector')['yearly_return'].mean().sort_values()
+
+# Create the bar chart
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.bar(sector_avg_returns.index, sector_avg_returns.values, color='skyblue', edgecolor='black')
+
+# Adding title and labels
+    ax.set_title('Average Yearly Return by Sector', fontsize=16)
+    ax.set_xlabel('Sector', fontsize=12, labelpad=20)  # Adjust label position with labelpad
+    ax.set_ylabel('Average Yearly Return (%)', fontsize=12)
+    ax.set_xticklabels(sector_avg_returns.index, rotation=45, fontsize=10, ha='right')
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    st.pyplot(fig)
+    
+       # --- Stock Price Correlation ---
+    st.subheader("Stock Price Correlation")
+    if "close" in df.columns:
+        correlation_data = df.pivot(index="date", columns="Ticker", values="close")
+        corr = correlation_data.corr()
+        fig, ax = plt.subplots(figsize=(12, 10))
+        sns.heatmap(corr, annot=False, cmap="coolwarm",cbar=True,ax=ax)
+        plt.title("Stock Price Correlation")
+        st.pyplot(fig)
+    else:
+        st.error("Close price data is missing!")
+
+    # --- Top 5 Performing Stocks ---
+    st.subheader("Top 5 Performing Stocks ")
+    top_stocks = (
+        df.groupby('Ticker')['daily_return']
+        .last()
+        .nlargest(5)
+        .index
+    )
+
+    plt.figure(figsize=(12, 8))
+    for ticker in top_stocks:
+        stock_data = df[df['Ticker'] == ticker]
+        plt.plot(stock_data['date'], stock_data['cumulative_return'], label=ticker)
+
+    plt.title(f"Top 5 Performing Stocks")
+    plt.xlabel("Date")
+    plt.ylabel('Cumulative Return')
+    plt.legend()
+    plt.grid(visible=True, linestyle="--", alpha=0.7)
+    st.pyplot(plt)
 
     # --- Top 5 Gainers and Losers (Month-wise) ---
     st.subheader("Top 5 Gainers and Losers (Month-wise)")
@@ -137,39 +193,6 @@ try:
           ax.set_xlabel('Ticker')
           ax.tick_params(axis='x', rotation=45)
           st.pyplot(fig)
-
-       # --- Stock Price Correlation ---
-    st.subheader("Stock Price Correlation")
-    if "close" in df.columns:
-        correlation_data = df.pivot(index="date", columns="Ticker", values="close")
-        corr = correlation_data.corr()
-        fig, ax = plt.subplots(figsize=(12, 10))
-        sns.heatmap(corr, annot=False, cmap="coolwarm",cbar=True,ax=ax)
-        plt.title("Stock Price Correlation")
-        st.pyplot(fig)
-    else:
-        st.error("Close price data is missing!")
-
-    # --- Top 5 Performing Stocks (Daily Return) ---
-    st.subheader("Top 5 Performing Stocks (Daily Return)")
-    top_stocks = (
-        df.groupby('Ticker')['daily_return']
-        .last()
-        .nlargest(5)
-        .index
-    )
-
-    plt.figure(figsize=(12, 8))
-    for ticker in top_stocks:
-        stock_data = df[df['Ticker'] == ticker]
-        plt.plot(stock_data['date'], stock_data['cumulative_return'], label=ticker)
-
-    plt.title(f"Top 5 Performing Stocks: {selected_metric}")
-    plt.xlabel("Date")
-    plt.ylabel('Cumulative Return')
-    plt.legend()
-    plt.grid(visible=True, linestyle="--", alpha=0.7)
-    st.pyplot(plt)
 
 except Exception as e:
     st.error(f"An error occurred: {e}")
