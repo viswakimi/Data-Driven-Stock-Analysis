@@ -43,13 +43,13 @@ try:
     # Populate sectors in the filter dropdown
     if "sector" in df.columns:
         sectors = ["All"] + df["sector"].dropna().unique().tolist()
-        selected_sector = st.sidebar.selectbox("Filter by Sector", sectors)
+        selected_sector = st.sidebar.multiselect("Filter by Sector", sectors)
     else:
-        selected_sector = "All"
+        selected_sector = ["All"]
 
     # Filter by Sector
-    if selected_sector != "All":
-        df = df[df["sector"] == selected_sector]
+    if "All" not in selected_sector:
+        df = df[df["sector"].isin(selected_sector)]
     
     # Apply Date Filter
     if date_range and len(date_range) == 2:
@@ -74,64 +74,78 @@ try:
 
     # --- Top 5 Gainers and Losers (Month-wise) ---
     st.subheader("Top 5 Gainers and Losers (Month-wise)")
-    if "monthly_return" in df.columns:
-        monthly_summary = df.groupby(["month", "Ticker"])["monthly_return"].last().reset_index()
-        gainers = monthly_summary.sort_values(by="monthly_return", ascending=False).groupby("month").head(5)
-        losers = monthly_summary.sort_values(by="monthly_return").groupby("month").head(5)
+    
+    monthly_data = df.groupby(['Ticker', 'month']).agg(
+        open=('open', 'first'),
+        close=('close', 'last')
+    ).reset_index()
+    
+    monthly_data['monthly_return'] = ((monthly_data['close'] - monthly_data['open']) / 
+                                      monthly_data['open']) * 100
 
-        st.write("**Top 5 Gainers**")
-        st.dataframe(gainers)
+    months = monthly_data['month'].unique()
 
-        st.write("**Top 5 Losers**")
-        st.dataframe(losers)
-    else:
-        st.error("Monthly return data is missing!")
+    for month in months:
+        month_data = monthly_data[monthly_data['month'] == month]
+        top_5_gainers = month_data.nlargest(5, 'monthly_return')
+        top_5_losers = month_data.nsmallest(5, 'monthly_return')
 
-    # --- Stock Price Correlation ---
+        col1, col2 = st.columns(2)
+
+        with col1:
+          st.write("**Top 5 Gainers**")
+          fig, ax = plt.subplots(figsize=(10, 6))
+          sns.barplot(x='Ticker', y='monthly_return', data=top_5_gainers, ax=ax, palette='Greens_d',hue='Ticker')
+          ax.set_title(f'Top 5 Gainers - {month}')
+          ax.set_xlabel('Ticker')
+          ax.set_ylabel('Monthly Return (%)')
+          ax.tick_params(axis='x', rotation=45)
+          st.pyplot(fig)
+
+          
+
+        with col2:
+          st.write("**Top 5 Losers**")
+          fig, ax = plt.subplots(figsize=(10, 6))
+          sns.barplot(x='Ticker', y='monthly_return', data=top_5_losers, ax=ax, palette='Reds_d',hue='Ticker')
+          ax.set_title(f'Top 5 Losers - {month}')
+          ax.set_xlabel('Ticker')
+          ax.tick_params(axis='x', rotation=45)
+          st.pyplot(fig)
+
+       # --- Stock Price Correlation ---
     st.subheader("Stock Price Correlation")
     if "close" in df.columns:
         correlation_data = df.pivot(index="date", columns="Ticker", values="close")
         corr = correlation_data.corr()
-        fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", cbar=True, ax=ax)
+        fig, ax = plt.subplots(figsize=(12, 10))
+        sns.heatmap(corr, annot=False, cmap="coolwarm",cbar=True,ax=ax)
         plt.title("Stock Price Correlation")
         st.pyplot(fig)
     else:
         st.error("Close price data is missing!")
 
-
-    
-
-    # --- Top 5 Performing Stocks (Cumulative Return) ---
-    st.subheader("Top 5 Performing Stocks (Cumulative Return)")
-    if 'cumulative_return' not in df.columns:
-        if 'daily_return' in df.columns:
-            df['cumulative_return'] = (1 + df['daily_return']).cumprod() - 1
-        else:
-            st.error("Cumulative return and daily return data are missing!")
-            st.stop()
-
+    # --- Top 5 Performing Stocks (Daily Return) ---
+    st.subheader("Top 5 Performing Stocks (Daily Return)")
     top_stocks = (
-        df.groupby('Ticker')['cumulative_return']
+        df.groupby('Ticker')['daily_return']
         .last()
-        .nlargest(num_stocks)
+        .nlargest(5)
         .index
     )
 
     plt.figure(figsize=(12, 8))
     for ticker in top_stocks:
         stock_data = df[df['Ticker'] == ticker]
-        plt.plot(stock_data['date'], stock_data[selected_metric.lower()], label=ticker)
+        plt.plot(stock_data['date'], stock_data['cumulative_return'], label=ticker)
 
-    plt.title(f"Top {num_stocks} Stocks: {selected_metric}")
+    plt.title(f"Top 5 Performing Stocks: {selected_metric}")
     plt.xlabel("Date")
-    plt.ylabel(selected_metric)
+    plt.ylabel('Cumulative Return')
     plt.legend()
     plt.grid(visible=True, linestyle="--", alpha=0.7)
     st.pyplot(plt)
-
     
-
 except Exception as e:
     st.error(f"An error occurred: {e}")
 
