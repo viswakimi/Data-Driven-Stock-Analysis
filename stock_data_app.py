@@ -35,7 +35,7 @@ engine = create_engine('mysql+pymysql://root:Abcd1234@localhost/stock_analysis')
 # Function to fetch data from MySQL
 @st.cache_data
 def fetch_data():
-    query = "SELECT * FROM stock_data"
+    query = "SELECT * FROM stock_data1"
     df = pd.read_sql(query, engine)
     return df
 
@@ -116,6 +116,7 @@ try:
     ax.set_title('Average Yearly Return by Sector', fontsize=16)
     ax.set_xlabel('Sector', fontsize=12, labelpad=20)  # Adjust label position with labelpad
     ax.set_ylabel('Average Yearly Return (%)', fontsize=12)
+    ax.set_xticks(range(len(sector_avg_returns.index)))
     ax.set_xticklabels(sector_avg_returns.index, rotation=45, fontsize=10, ha='right')
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     st.pyplot(fig)
@@ -132,29 +133,30 @@ try:
     else:
         st.error("Close price data is missing!")
 
-    # --- Top 5 Performing Stocks ---
-    st.subheader("Top 5 Performing Stocks ")
-    top_stocks = (
-        df.groupby('Ticker')['daily_return']
-        .last()
-        .nlargest(5)
-        .index
-    )
-
+    
+# --- Top 5 Performing Stocks ---
+    st.subheader("Top 5 Performing Stocks")
+        
+    top_5_stocks = df.groupby('Ticker')['cumulative_return'].last().nlargest(5).index
+        
     plt.figure(figsize=(12, 8))
-    for ticker in top_stocks:
+    for ticker in top_5_stocks:
         stock_data = df[df['Ticker'] == ticker]
         plt.plot(stock_data['date'], stock_data['cumulative_return'], label=ticker)
 
-    plt.title(f"Top 5 Performing Stocks")
-    plt.xlabel("Date")
+    plt.title('Cumulative Return for Top 5 Performing Stocks')
+    plt.xlabel('Date')
     plt.ylabel('Cumulative Return')
     plt.legend()
     plt.grid(visible=True, linestyle="--", alpha=0.7)
     st.pyplot(plt)
 
+
     # --- Top 5 Gainers and Losers (Month-wise) ---
     st.subheader("Top 5 Gainers and Losers (Month-wise)")
+    
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    df['month'] = df['date'].dt.to_period('M')
     
     monthly_data = df.groupby(['Ticker', 'month']).agg(
         open=('open', 'first'),
@@ -193,6 +195,7 @@ try:
           ax.set_xlabel('Ticker')
           ax.tick_params(axis='x', rotation=45)
           st.pyplot(fig)
+          plt.close()
 
 except Exception as e:
     st.error(f"An error occurred: {e}")
