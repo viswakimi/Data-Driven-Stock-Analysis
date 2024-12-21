@@ -41,7 +41,6 @@ This GitHub repository contains the source code, documentation, and deliverables
 │   ├── PowerBI_Dashboard.pbix
 ├── README.md
 ├── requirements.txt
-└── LICENSE
 ```
 
 ---
