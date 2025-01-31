@@ -1,152 +1,94 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sqlalchemy import create_engine
 import pymysql
-import seaborn as sns
-import matplotlib.pyplot as plt
 
-st.set_page_config(
-    layout="wide",
-    page_title="Stock Data Analysis",
-    initial_sidebar_state="expanded"
-)
+# Page Configuration
+st.set_page_config(layout="wide", page_title="Stock Data Analysis", initial_sidebar_state="expanded")
 
-# Page styling
-st.markdown(
-    """
-    <style>
-    .stApp {        
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-    }
-    [data-testid="stSidebar"] {
-        background-color: rgba(100, 60, 50, 0.4);
-    }
-    
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-st.markdown('<h1 style="color:red;">Stock Performance Dashboard</h1>', unsafe_allow_html=True)
-# Database connection using SQLAlchemy
+# Database Connection
 engine = create_engine('mysql+pymysql://root:Abcd1234@localhost/stock_analysis')
 
-# Function to fetch data from MySQL
+# Fetch Data Function (Cached for Performance)
 @st.cache_data
 def fetch_data():
-    query = "SELECT * FROM stock_data1"
-    df = pd.read_sql(query, engine)
+    df = pd.read_sql("SELECT * FROM stock_data1", engine)
+    df['date'] = pd.to_datetime(df['date'])
     return df
 
-# Load Data
-try:
-    df = fetch_data()
+df = fetch_data()
 
-    # Data Cleaning
-    df['date'] = pd.to_datetime(df['date'])  # Ensure 'date' is datetime
+# Sidebar Navigation
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Main Dashboard", "Selected Stocks Details"])
 
-    # Sidebar Inputs
-    st.sidebar.header("User Inputs")
-    selected_ticker = st.sidebar.multiselect(
-        "Select Ticker", 
-        ["All"] + df["Ticker"].dropna().unique().tolist()
-    )
+# Sidebar Filters
+st.sidebar.header("Filters")
+tickers = df["Ticker"].dropna().unique().tolist()
+sectors = df["sector"].dropna().unique().tolist()
+months = df['date'].dt.month_name().unique().tolist()
+years = df['date'].dt.year.unique().tolist()
 
-    # Populate sectors in the filter dropdown
-    if "sector" in df.columns:
-        sectors = ["All"] + df["sector"].dropna().unique().tolist()
-        selected_sector = st.sidebar.multiselect("Filter by Sector", sectors)
-    else:
-        selected_sector = ["All"]
+selected_ticker = st.sidebar.multiselect("Select Ticker", ["All"] + tickers)
+selected_sector = st.sidebar.multiselect("Filter by Sector", ["All"] + sectors)
+selected_month = st.sidebar.selectbox("Select Month", ["All"] + months)
+selected_year = st.sidebar.selectbox("Select Year", ["All"] + years)
 
-    # Filter by Sector
-    if "All" not in selected_sector:
-        df = df[df["sector"].isin(selected_sector)]
+# Apply Filters Efficiently
+filtered_df = df.copy()
 
-    # Month and Year Filter
-    df['month'] = df['date'].dt.month_name()
-    df['year'] = df['date'].dt.year
+if "All" not in selected_sector:
+    filtered_df = filtered_df[filtered_df["sector"].isin(selected_sector)]
+if selected_month != "All":
+    filtered_df = filtered_df[filtered_df['date'].dt.month_name() == selected_month]
+if selected_year != "All":
+    filtered_df = filtered_df[filtered_df['date'].dt.year == int(selected_year)]
+if "All" not in selected_ticker:
+    filtered_df = filtered_df[filtered_df["Ticker"].isin(selected_ticker)]
 
-    months = ["All"] + df['month'].unique().tolist()
-    selected_month = st.sidebar.selectbox("Select Month", months)
+# === Main Dashboard ===
+if page == "Main Dashboard":
+    st.title("Stock Performance Dashboard")
 
-    years = ["All"] + df['year'].unique().tolist()
-    selected_year = st.sidebar.selectbox("Select Year", years)
+    # Raw Data Preview
+    with st.expander(" View Raw Data"):
+        st.dataframe(filtered_df.head(10))
 
-    if selected_month != "All":
-        df = df[df['month'] == selected_month]
-    if selected_year != "All":
-        df = df[df['year'] == selected_year]
-
-    # --- Data Preview ---
-    st.subheader("Raw Data Preview")
-    st.dataframe(df.head())
-
-    # --- Top 10 Most Volatile Stocks ---
-    st.subheader("Top 10 Most Volatile Stocks")
-    if "volatility" in df.columns:
-        top_10_volatile = df.groupby("Ticker")["volatility"].mean().nlargest(10).reset_index()
-        fig = px.bar(top_10_volatile, 
-                     x="Ticker", 
-                     y="volatility", 
-                     color="volatility", 
-                     color_continuous_scale="RdYlGn_r",  # Green to Red palette
-                     title="Top 10 Most Volatile Stocks",
-                     labels={"volatility": "Volatility (Standard Deviation)", "Ticker": "Stock Ticker"})
-        fig.update_layout(
-            xaxis_title="Stock Ticker",
-            yaxis_title="Volatility (Standard Deviation)",
-            xaxis_tickangle=-45,
-            template="plotly_dark"
-        )
-        st.plotly_chart(fig)
-    else:
-        st.error("Volatility data is missing!")
-
-    # --- Average Yearly Return by Sector ---
-    st.subheader("Average Yearly Return by Sector")
-    avg_yearly_return = df.groupby("sector")["yearly_return"].mean().reset_index()
-    fig, ax = plt.subplots(figsize=(30, 20))
-    sns.barplot(x="sector", y="yearly_return", data=avg_yearly_return, ax=ax, palette="RdYlGn_r")
-    ax.set_title("Average Yearly Return by Sector")
-    ax.set_xlabel("Sector")
-    ax.set_ylabel("Average Yearly Return (%)")
-    st.pyplot(fig)
-
-    # --- Stock Price Correlation ---
-    st.subheader("Stock Price Correlation")
-    if "close" in df.columns:
-        correlation_data = df.pivot(index="date", columns="Ticker", values="close")
-        corr = correlation_data.corr()
-        fig, ax = plt.subplots(figsize=(12, 10))
-        sns.heatmap(corr, annot=False, cmap="coolwarm", cbar=True, ax=ax)
-        plt.title("Stock Price Correlation")
-        st.pyplot(fig)
-    else:
-        st.error("Close price data is missing!")
-
-    # --- Top 5 Performing Stocks ---
-    st.subheader("Top 5 Performing Stocks")
-    top_5_stocks = df.groupby('Ticker')['cumulative_return'].last().nlargest(5).index
-    plt.figure(figsize=(12, 8))
-    for ticker in top_5_stocks:
-        stock_data = df[df['Ticker'] == ticker]
-        plt.plot(stock_data['date'], stock_data['cumulative_return'], label=ticker)
-    plt.title('Cumulative Return for Top 5 Performing Stocks')
-    plt.xlabel('Date')
-    plt.ylabel('Cumulative Return')
-    plt.legend()
-    plt.grid(visible=True, linestyle="--", alpha=0.7)
-    st.pyplot(plt)
-
-    # --- Top 5 Gainers and Losers ---
-    st.subheader("Top 5 Gainers and Losers")
-    df["monthly_return"] = df.groupby("Ticker")["close"].pct_change() * 100
-    latest_month_data = df[df["month"] == selected_month] if selected_month != "All" else df
     
+    # Volatility Chart
+    if "volatility" in filtered_df.columns:
+        top_volatile = filtered_df.groupby("Ticker")["volatility"].mean().nlargest(10).reset_index()
+        st.plotly_chart(px.bar(top_volatile, x="Ticker", y="volatility", color="volatility", color_continuous_scale="RdYlGn_r", title="Top 10 Most Volatile Stocks"))
+
+    # Yearly Return by Sector
+    if "yearly_return" in filtered_df.columns:
+        avg_return = filtered_df.groupby("sector")["yearly_return"].mean().reset_index()
+        fig, ax = plt.subplots(figsize=(30, 25))
+        sns.barplot(x="sector", y="yearly_return", data=avg_return, ax=ax, palette="RdYlGn_r")
+        ax.set_title("Average Yearly Return by Sector")
+        st.pyplot(fig)
+
+    # Correlation Heatmap
+    if "close" in filtered_df.columns:
+        correlation_data = filtered_df.pivot(index="date", columns="Ticker", values="close").corr()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(correlation_data, annot=False, cmap="coolwarm", ax=ax)
+        ax.set_title("Stock Correlation Heatmap")
+        st.pyplot(fig)
+
+    # Cumulative Returns for Top 5 Stocks
+    if "cumulative_return" in filtered_df.columns:
+        top_5 = filtered_df.groupby('Ticker')['cumulative_return'].last().nlargest(5).index
+        st.plotly_chart(px.line(filtered_df[filtered_df['Ticker'].isin(top_5)], x='date', y='cumulative_return', color='Ticker', title="Top 5 Stocks: Cumulative Returns Over Time"))
+
+    # Gainers & Losers
+    st.subheader("Top 5 Gainers and Losers")
+    filtered_df["monthly_return"] = filtered_df.groupby("Ticker")["close"].pct_change() * 100
+
+    latest_month_data = filtered_df if selected_month == "All" else filtered_df[filtered_df["date"].dt.month_name() == selected_month]
     top_5_gainers = latest_month_data.nlargest(5, "monthly_return")
     top_5_losers = latest_month_data.nsmallest(5, "monthly_return")
 
@@ -154,53 +96,49 @@ try:
 
     with col1:
         st.write("**Top 5 Gainers**")
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(6, 4))
         sns.barplot(x="Ticker", y="monthly_return", data=top_5_gainers, ax=ax, palette="Greens_d")
         ax.set_title(f"Top 5 Gainers - {selected_month}")
         st.pyplot(fig)
 
     with col2:
         st.write("**Top 5 Losers**")
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(6, 4))
         sns.barplot(x="Ticker", y="monthly_return", data=top_5_losers, ax=ax, palette="Reds_d")
         ax.set_title(f"Top 5 Losers - {selected_month}")
         st.pyplot(fig)
 
-    # --- Top 5 and Bottom 5 Volume Stocks ---
-    st.subheader("Top 5 and Bottom 5 Volume Stocks")
-    volume_data = df.groupby('Ticker')['volume'].mean().reset_index()
+    # Volume Analysis
+    st.subheader("Top & Bottom 5 Volume Stocks")
+    volume_data = filtered_df.groupby('Ticker')['volume'].mean().reset_index()
     top_5_volume = volume_data.nlargest(5, 'volume')
     bottom_5_volume = volume_data.nsmallest(5, 'volume')
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.write("**Top 5 Volume Stocks**")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.barplot(x='Ticker', y='volume', data=top_5_volume, ax=ax, palette='Greens_d', hue='Ticker')
+        fig, ax = plt.subplots(figsize=(12, 8))
+        sns.barplot(x='Ticker', y='volume', data=top_5_volume, ax=ax, palette='Blues_d')
         ax.set_title('Top 5 Volume Stocks')
-        ax.set_xlabel('Ticker')
-        ax.set_ylabel('Average Volume')
-        ax.tick_params(axis='x', rotation=45)
         st.pyplot(fig)
 
     with col2:
-        st.write("**Bottom 5 Volume Stocks**")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.barplot(x='Ticker', y='volume', data=bottom_5_volume, ax=ax, palette='Reds_d', hue='Ticker')
+        fig, ax = plt.subplots(figsize=(12,8))
+        sns.barplot(x='Ticker', y='volume', data=bottom_5_volume, ax=ax, palette='Oranges_d')
         ax.set_title('Bottom 5 Volume Stocks')
-        ax.set_xlabel('Ticker')
-        ax.tick_params(axis='x', rotation=45)
         st.pyplot(fig)
 
+# === Selected Stocks Details ===
+elif page == "Selected Stocks Details":
+    st.title(" Selected Stocks Details")
     if selected_ticker:
         st.subheader("Selected Stocks Details")
         selected_stocks = df[df['Ticker'].isin(selected_ticker)]
         st.dataframe(selected_stocks[['Ticker', 'date', 'volume', 'daily_return', 'high', 'low', 'open', 'close',"monthly_return",'yearly_return']])
         
-        st.subheader("Summary")
+    st.subheader("Summary")
         # Group by ticker to perform the necessary calculations
-        summary = selected_stocks.groupby('Ticker').agg(
+    summary = selected_stocks.groupby('Ticker').agg(
             total_volume=('volume', 'sum'),
             avg_daily_return=('daily_return', 'mean'),
             avg_yearly_return=('yearly_return', 'mean'),
@@ -208,11 +146,11 @@ try:
         ).reset_index()
 
         # Calculate profit/loss from yearly return (assuming baseline return is 0 or a certain threshold)
-        summary['yearly_return_profit_loss'] = summary['avg_yearly_return'] - 0
-        col1, col2 = st.columns(2)
+    summary['yearly_return_profit_loss'] = summary['avg_yearly_return'] - 0
+    col1, col2 = st.columns(2)
 
         # Display each stock's summary in a card format using st.metric
-        for _, row in summary.iterrows():
+    for _, row in summary.iterrows():
             with col1:
                 st.metric(label=f"{row['Ticker']} - Total Volume", value=f"{row['total_volume']:,}", delta=None)
                 st.metric(label=f"{row['Ticker']} - Avg Daily Return", value=f"{row['avg_daily_return']:.2f}%", delta=None)
@@ -222,9 +160,44 @@ try:
                 st.metric(label=f"{row['Ticker']} - Avg Monthly Return", value=f"{row['avg_monthly_return']:.2f}%", delta=None)
 
             st.markdown("---")  # Divider for better separation between tickers
+    # Filter data for a specific ticker
+    ticker_data = df[df['Ticker'] == selected_ticker[0]]
 
-except Exception as e:
-    st.error(f"An error occurred: {e}")
+   
+    risk_return = df.groupby('Ticker').agg(
+    avg_return=('daily_return', 'mean'),
+    avg_volatility=('volatility', 'mean')
+    ).reset_index()
 
-# Footer
-st.sidebar.markdown("---")
+    fig = px.scatter(risk_return, x='avg_volatility', y='avg_return', text='Ticker',
+                 title="Risk vs Return",
+                 labels={"avg_volatility": "Volatility", "avg_return": "Average Return"})
+    fig.update_traces(textposition='top center')
+    fig.update_layout(template="plotly_dark")
+    st.plotly_chart(fig)
+    
+    df['month'] = df['date'].dt.month_name()
+
+    monthly_returns = df.pivot_table(index='Ticker', columns='month', values='monthly_return', aggfunc='mean')
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(monthly_returns, cmap="RdYlGn", annot=True, fmt=".2f", center=0)
+    plt.title("Monthly Returns by Ticker")
+    st.pyplot(plt)
+
+    selected_stocks = df[df['Ticker'].isin(selected_ticker)]
+    fig = px.line(selected_stocks, x='date', y='cumulative_return', color='Ticker',
+              title="Cumulative Returns Over Time",
+              labels={"cumulative_return": "Cumulative Return", "date": "Date"})
+    fig.update_layout(template="plotly_dark")
+    st.plotly_chart(fig)
+
+    fig = px.sunburst(df, path=['sector', 'Ticker'], values='volume',
+                  title="Sector and Ticker Volume Distribution")
+    st.plotly_chart(fig) 
+    # Risk vs Return Scatter Plot
+    risk_return = filtered_df.groupby('Ticker').agg(avg_return=('daily_return', 'mean'), avg_volatility=('volatility', 'mean')).reset_index()
+    st.plotly_chart(px.scatter(risk_return, x='avg_volatility', y='avg_return', text='Ticker', title="Risk vs Return"))
+
+    # Sector Volume Distribution
+    st.plotly_chart(px.sunburst(filtered_df, path=['sector', 'Ticker'], values='volume', title="Sector & Ticker Volume Distribution"))
+
