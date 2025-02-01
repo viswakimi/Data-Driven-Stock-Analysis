@@ -108,6 +108,7 @@ if page == "Main Dashboard":
                      color_continuous_scale='Reds', title="Top 10 Worst Performing Stocks")
       st.plotly_chart(fig_red)
 
+# === Monthly Top 5 Gainers and Losers ===
     st.subheader("Monthly Top 5 Gainers and Losers")
 
     if selected_month != "All":
