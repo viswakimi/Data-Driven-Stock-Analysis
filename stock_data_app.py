@@ -17,13 +17,16 @@ engine = create_engine('mysql+pymysql://root:Abcd1234@localhost/stock_analysis')
 def fetch_data():
     df = pd.read_sql("SELECT * FROM stock_data1", engine)
     df['date'] = pd.to_datetime(df['date'])
+    df['month'] = df['date'].dt.month
+    df['month_str'] = df['date'].dt.strftime('%B %Y')
     return df
 
 df = fetch_data()
+print(df.columns)
 
 # Sidebar Navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Main Dashboard", "Selected Stocks Details"])
+page = st.sidebar.radio("Go to", ["Main Dashboard","Selected Stocks Details"])
 
 # Sidebar Filters
 st.sidebar.header("Filters")
@@ -87,55 +90,63 @@ if page == "Main Dashboard":
     if "cumulative_return" in filtered_df.columns:
         top_5 = filtered_df.groupby('Ticker')['cumulative_return'].last().nlargest(5).index
         st.plotly_chart(px.line(filtered_df[filtered_df['Ticker'].isin(top_5)], x='date', y='cumulative_return', color='Ticker', title="Top 5 Stocks: Cumulative Returns Over Time"))
-
-    # Gainers & Losers
-    st.subheader("Top 5 Gainers and Losers")
-    filtered_df["monthly_return"] = filtered_df.groupby("Ticker")["close"].pct_change() * 100
-
-    latest_month_data = filtered_df if selected_month == "All" else filtered_df[filtered_df["date"].dt.month_name() == selected_month]
-    top_5_gainers = latest_month_data.nlargest(5, "monthly_return")
-    top_5_losers = latest_month_data.nsmallest(5, "monthly_return")
-
+    
+        # Top 10 Green & Red Stocks
+    # Remove duplicates and sort by yearly_return
+    top_10_green_stocks = df.drop_duplicates(subset=['Ticker']).sort_values(by='yearly_return', ascending=False).head(10)
+    top_10_red_stocks = df.drop_duplicates(subset=['Ticker']).sort_values(by='yearly_return').head(10)
+    st.subheader("Top 10 Green Stocks and Top 10 Red Stocks")
     col1, col2 = st.columns(2)
 
-    with col1:
-        st.write("**Top 5 Gainers**")
-        fig, ax = plt.subplots(figsize=(6, 4))
-        sns.barplot(x="Ticker", y="monthly_return", data=top_5_gainers, ax=ax, palette="Greens_d")
-        ax.set_title(f"Top 5 Gainers - {selected_month}")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+    with col1:      
+      fig_green = px.bar(top_10_green_stocks, x='Ticker', y='yearly_return', color='yearly_return',
+                       color_continuous_scale='Greens', title="Top 10 Best Performing Stocks")
+      st.plotly_chart(fig_green)
 
     with col2:
-        st.write("**Top 5 Losers**")
-        fig, ax = plt.subplots(figsize=(6, 4))
-        sns.barplot(x="Ticker", y="monthly_return", data=top_5_losers, ax=ax, palette="Reds_d")
-        ax.set_title(f"Top 5 Losers - {selected_month}")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+      fig_red = px.bar(top_10_red_stocks, x='Ticker', y='yearly_return', color='yearly_return',
+                     color_continuous_scale='Reds', title="Top 10 Worst Performing Stocks")
+      st.plotly_chart(fig_red)
+
+    st.subheader("Monthly Top 5 Gainers and Losers")
+
+    if selected_month != "All":
+        month_data = df[df['date'].dt.month_name() == selected_month]
+
+        # Ensure no duplicates for tickers
+        month_data_unique = month_data.drop_duplicates(subset=['Ticker'])
+
+        if len(month_data_unique) >= 5:
+            top_5_gainers = month_data_unique.nlargest(5, 'monthly_return')
+            top_5_losers = month_data_unique.nsmallest(5, 'monthly_return')
+
+            col1, col2 = st.columns(2)
+
+            with col1:                
+                fig_gainers = px.bar(top_5_gainers, x='Ticker', y='monthly_return', color='monthly_return',
+                                     color_continuous_scale='Blues', title=f"Top 5 Gainers - {selected_month}")
+                st.plotly_chart(fig_gainers)
+
+            with col2:                
+                fig_losers = px.bar(top_5_losers, x='Ticker', y='monthly_return', color='monthly_return',
+                                    color_continuous_scale='Reds', title=f"Top 5 Losers - {selected_month}")
+                st.plotly_chart(fig_losers)
 
     # Volume Analysis
     st.subheader("Top & Bottom 5 Volume Stocks")
     volume_data = filtered_df.groupby('Ticker')['volume'].mean().reset_index()
     top_5_volume = volume_data.nlargest(5, 'volume')
     bottom_5_volume = volume_data.nsmallest(5, 'volume')
-
     col1, col2 = st.columns(2)
-    figsize = (8,6)    
-
-    with col1:
-        fig, ax = plt.subplots(figsize=figsize )
-        sns.barplot(x='Ticker', y='volume', data=top_5_volume, ax=ax, palette='Blues_d')
-        ax.set_title('Top 5 Volume Stocks')
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-
-    with col2:
-        fig, ax = plt.subplots(figsize=figsize )
-        sns.barplot(x='Ticker', y='volume', data=bottom_5_volume, ax=ax, palette='Oranges_d')
-        ax.set_title('Bottom 5 Volume Stocks')
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+    with col1:      
+      fig_top_volume = px.bar(top_5_volume, x='Ticker', y='volume', color='volume',
+                        color_continuous_scale='greens', title="Top 5 Volume Stocks")
+      st.plotly_chart(fig_top_volume)
+      
+    with col2:      
+      fig_bottom_volume = px.bar(bottom_5_volume, x='Ticker', y='volume', color='volume',
+                           color_continuous_scale='Oranges', title="Bottom 5 Volume Stocks")
+      st.plotly_chart(fig_bottom_volume)
 
 # === Selected Stocks Details ===
 elif page == "Selected Stocks Details":
